@@ -221,7 +221,7 @@ export class AppServer {
     // Disable keepAliveTimeout so SSE connections are not prematurely closed
     // when upstream MCP servers (especially stdio) take a long time to respond.
     // Node.js default is 5s which is far too aggressive for long-lived SSE streams.
-    this.server.keepAliveTimeout = 0;
+    if (this.server) this.server.keepAliveTimeout = 0;
   }
 
   /**
