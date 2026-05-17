@@ -33,6 +33,7 @@ export class SystemConfigRepository {
         oauthServer: {},
         auth: {},
         enableSessionRebuild: false,
+        discovery: {},
       });
       config = await this.repository.save(config);
     }
