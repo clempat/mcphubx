@@ -163,13 +163,13 @@ describe('discoveryController', () => {
       });
     });
 
-    it('respects limit', () => {
+    it('respects limit but reports the pre-limit total so clients can paginate', () => {
       const { res, json } = buildRes();
       listDiscoveryServers({ query: { limit: '1' } } as unknown as Request, res);
 
       expect(json).toHaveBeenCalledWith({
         success: true,
-        data: { total: 1, servers: [sampleServers.firecrawl] },
+        data: { total: 2, servers: [sampleServers.firecrawl] },
       });
     });
 

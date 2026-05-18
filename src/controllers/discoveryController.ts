@@ -33,7 +33,7 @@ const ensureEnabled = (res: Response): boolean => {
 const applyFilters = (
   servers: MarketServer[],
   filters: { category?: string; tag?: string; limit?: number },
-): MarketServer[] => {
+): { results: MarketServer[]; total: number } => {
   let result = servers;
   if (filters.category) {
     result = result.filter((s) => s.categories?.includes(filters.category!));
@@ -41,10 +41,11 @@ const applyFilters = (
   if (filters.tag) {
     result = result.filter((s) => s.tags?.includes(filters.tag!));
   }
+  const total = result.length;
   if (typeof filters.limit === 'number' && filters.limit > 0) {
     result = result.slice(0, filters.limit);
   }
-  return result;
+  return { results: result, total };
 };
 
 const pickInstallation = (
@@ -80,7 +81,7 @@ export const listDiscoveryServers = (req: Request, res: Response): void => {
         : Object.values(getMarketServers());
 
     const limitNum = typeof limit === 'string' ? parseInt(limit, 10) : NaN;
-    const data = applyFilters(base, {
+    const { results, total } = applyFilters(base, {
       category: typeof category === 'string' && category ? category : undefined,
       tag: typeof tag === 'string' && tag ? tag : undefined,
       limit: !Number.isNaN(limitNum) ? limitNum : undefined,
@@ -88,7 +89,7 @@ export const listDiscoveryServers = (req: Request, res: Response): void => {
 
     const response: ApiResponse = {
       success: true,
-      data: { total: data.length, servers: data },
+      data: { total, servers: results },
     };
     res.json(response);
   } catch (error) {
