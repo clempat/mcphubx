@@ -13,6 +13,7 @@ import {
 } from '../models/OAuth.js';
 import crypto from 'crypto';
 import { safeCompare } from '../utils/safeCompare.js';
+import { cloneDefaultOAuthServerConfig } from '../constants/oauthServerDefaults.js';
 
 const { Request, Response } = OAuth2Server;
 
@@ -288,13 +289,20 @@ let oauth: OAuth2Server | null = null;
  * Initialize OAuth server
  */
 export const initOAuthServer = async (): Promise<void> => {
+  // Reset to ensure clean state on re-initialization
+  oauth = null;
+
   const systemConfigDao = getSystemConfigDao();
   const systemConfig = await systemConfigDao.get();
-  const oauthConfig = systemConfig?.oauthServer;
-  const requireState = oauthConfig?.requireState === true;
+  const storedConfig = systemConfig?.oauthServer;
+  // Fall back to defaults when the stored config has no explicit 'enabled' flag
+  // (e.g. first DB-mode startup where SystemConfigRepository creates oauthServer: {})
+  const oauthConfig =
+    storedConfig && 'enabled' in storedConfig ? storedConfig : cloneDefaultOAuthServerConfig();
+  const requireState = oauthConfig.requireState === true;
 
-  if (!oauthConfig || !oauthConfig.enabled) {
-    console.log('OAuth authorization server is disabled or not configured');
+  if (!oauthConfig.enabled) {
+    console.log('OAuth authorization server is disabled');
     return;
   }
 
