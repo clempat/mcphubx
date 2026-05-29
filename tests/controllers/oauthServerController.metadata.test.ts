@@ -186,4 +186,21 @@ describe('oauthServerController metadata endpoints', () => {
     expect(mockStatus).toHaveBeenCalledWith(404);
     expect(mockJson).toHaveBeenCalledWith({ error: 'OAuth server not configured' });
   });
+
+  it('merges partial config with defaults so missing fields inherit default values', async () => {
+    getSystemConfigMock.mockResolvedValue({
+      oauthServer: { enabled: true },
+    });
+
+    await getMetadata(mockRequest as Request, mockResponse as Response);
+
+    expect(mockStatus).not.toHaveBeenCalled();
+    expect(mockJson).toHaveBeenCalledWith(
+      expect.objectContaining({
+        scopes_supported: ['read', 'write'],
+        code_challenge_methods_supported: ['S256', 'plain'],
+        token_endpoint_auth_methods_supported: ['none'],
+      }),
+    );
+  });
 });

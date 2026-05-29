@@ -70,4 +70,14 @@ describe('initOAuthServer', () => {
 
     expect(getOAuthServer()).not.toBeNull();
   });
+
+  it('initializes with merged defaults when stored config is partial (only enabled)', async () => {
+    mockGet.mockResolvedValue({
+      oauthServer: { enabled: true },
+    });
+
+    await initOAuthServer();
+
+    expect(getOAuthServer()).not.toBeNull();
+  });
 });

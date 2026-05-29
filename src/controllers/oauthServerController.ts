@@ -529,10 +529,8 @@ export const getMetadata = async (req: Request, res: Response): Promise<void> =>
   try {
     const systemConfig = await getSystemConfigDao().get();
     const storedConfig = systemConfig?.oauthServer;
-    // Fall back to defaults when the stored config has no explicit 'enabled' flag
-    // (e.g. first DB-mode startup where SystemConfigRepository creates oauthServer: {})
-    const oauthConfig =
-      storedConfig && 'enabled' in storedConfig ? storedConfig : cloneDefaultOAuthServerConfig();
+    // Merge stored config with defaults so partial configs still inherit all default values
+    const oauthConfig = { ...cloneDefaultOAuthServerConfig(), ...storedConfig };
 
     if (!oauthConfig.enabled) {
       res.status(404).json({ error: 'OAuth server not configured' });
@@ -578,10 +576,8 @@ export const getProtectedResourceMetadata = async (req: Request, res: Response):
   try {
     const systemConfig = await getSystemConfigDao().get();
     const storedConfig = systemConfig?.oauthServer;
-    // Fall back to defaults when the stored config has no explicit 'enabled' flag
-    // (e.g. first DB-mode startup where SystemConfigRepository creates oauthServer: {})
-    const oauthConfig =
-      storedConfig && 'enabled' in storedConfig ? storedConfig : cloneDefaultOAuthServerConfig();
+    // Merge stored config with defaults so partial configs still inherit all default values
+    const oauthConfig = { ...cloneDefaultOAuthServerConfig(), ...storedConfig };
 
     if (!oauthConfig.enabled) {
       res.status(404).json({ error: 'OAuth server not configured' });

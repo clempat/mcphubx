@@ -295,10 +295,8 @@ export const initOAuthServer = async (): Promise<void> => {
   const systemConfigDao = getSystemConfigDao();
   const systemConfig = await systemConfigDao.get();
   const storedConfig = systemConfig?.oauthServer;
-  // Fall back to defaults when the stored config has no explicit 'enabled' flag
-  // (e.g. first DB-mode startup where SystemConfigRepository creates oauthServer: {})
-  const oauthConfig =
-    storedConfig && 'enabled' in storedConfig ? storedConfig : cloneDefaultOAuthServerConfig();
+  // Merge stored config with defaults so partial configs still inherit all default values
+  const oauthConfig = { ...cloneDefaultOAuthServerConfig(), ...storedConfig };
   const requireState = oauthConfig.requireState === true;
 
   if (!oauthConfig.enabled) {
