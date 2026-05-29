@@ -1,7 +1,7 @@
 import React, { createContext, useState, useEffect, useRef, useCallback, useContext } from 'react';
 import { useTranslation } from 'react-i18next';
 import { Server, ApiResponse } from '@/types';
-import { apiGet, apiPost, apiDelete } from '../utils/fetchInterceptor';
+import { apiDelete, apiGet, apiPost, apiPut } from '../utils/fetchInterceptor';
 import { useAuth } from './AuthContext';
 
 const SERVERS_PER_PAGE_KEY = 'mcphub_servers_per_page';
@@ -69,6 +69,7 @@ interface ServerContextType {
   handleServerEdit: (server: Server) => Promise<any>;
   handleServerRemove: (serverName: string) => Promise<boolean>;
   handleServerToggle: (server: Server, enabled: boolean) => Promise<boolean>;
+  handleServerVisibilityChange: (server: Server, visibility: 'private' | 'group' | 'public') => Promise<boolean>;
   handleServerReload: (server: Server) => Promise<boolean>;
 }
 
@@ -413,6 +414,58 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     [t],
   );
 
+  const handleServerVisibilityChange = useCallback(
+    async (server: Server, visibility: 'private' | 'group' | 'public') => {
+      try {
+        const encodedServerName = encodeURIComponent(server.name);
+        const serverData: ApiResponse<{
+          name: string;
+          status: string;
+          tools: any[];
+          config: Record<string, any>;
+        }> = await apiGet(`/servers/${encodedServerName}`);
+
+        if (!serverData || !serverData.success || !serverData.data?.config) {
+          setError(t('server.invalidConfig', { serverName: server.name }));
+          return false;
+        }
+
+        const result = await apiPut(`/servers/${encodedServerName}`, {
+          config: {
+            ...serverData.data.config,
+            visibility,
+          },
+        });
+
+        if (!result || !result.success) {
+          setError(result?.message || t('server.updateError', { serverName: server.name }));
+          return false;
+        }
+
+        const applyVisibility = (items: Server[]) =>
+          items.map((item) =>
+            item.name === server.name
+              ? {
+                  ...item,
+                  visibility,
+                  config: item.config ? { ...item.config, visibility } : item.config,
+                }
+              : item,
+          );
+
+        setServers((prev) => applyVisibility(prev));
+        setAllServers((prev) => applyVisibility(prev));
+        setRefreshKey((prevKey) => prevKey + 1);
+        return true;
+      } catch (err) {
+        console.error('Error updating server visibility', { serverName: server.name, err });
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      }
+    },
+    [t],
+  );
+
   const handleServerReload = useCallback(
     async (server: Server) => {
       try {
@@ -472,6 +525,7 @@ export const ServerProvider: React.FC<{ children: React.ReactNode }> = ({ childr
     handleServerEdit,
     handleServerRemove,
     handleServerToggle,
+    handleServerVisibilityChange,
     handleServerReload,
   };
 

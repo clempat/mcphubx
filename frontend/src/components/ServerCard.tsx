@@ -24,12 +24,18 @@ import { useToast } from '@/contexts/ToastContext';
 import { useSettingsData } from '@/hooks/useSettingsData';
 import { useAuth } from '@/contexts/AuthContext';
 import { canManageServer } from '@/utils/serverPermissions';
+import {
+  getServerVisibilityDisplay,
+  getServerVisibilityOptions,
+  normalizeServerVisibility,
+} from '@/utils/serverVisibility';
 
 interface ServerCardProps {
   server: Server;
   onRemove: (serverName: string) => void;
   onEdit: (server: Server) => void;
   onToggle?: (server: Server, enabled: boolean) => Promise<boolean>;
+  onVisibilityChange?: (server: Server, visibility: 'private' | 'group' | 'public') => Promise<boolean>;
   onRefresh?: () => void;
   onReload?: (server: Server) => Promise<boolean>;
 }
@@ -43,7 +49,15 @@ const transportLabel = (t: any, type?: string) => {
   return type;
 };
 
-const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }: ServerCardProps) => {
+const ServerCard = ({
+  server,
+  onRemove,
+  onEdit,
+  onToggle,
+  onVisibilityChange,
+  onRefresh,
+  onReload,
+}: ServerCardProps) => {
   const { t } = useTranslation();
   const { showToast } = useToast();
   const { exportMCPSettings, installConfig } = useSettingsData();
@@ -54,6 +68,7 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }:
   const [expandedTab, setExpandedTab] = useState<'tools' | 'prompts' | 'resources' | null>(null);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [isToggling, setIsToggling] = useState(false);
+  const [isUpdatingVisibility, setIsUpdatingVisibility] = useState(false);
   const [isReloading, setIsReloading] = useState(false);
   const [showMenu, setShowMenu] = useState(false);
   const [showErrorPopover, setShowErrorPopover] = useState(false);
@@ -103,6 +118,23 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }:
       }
     } finally {
       setIsReloading(false);
+    }
+  };
+
+  const handleVisibilityChange = async (e: React.ChangeEvent<HTMLSelectElement>) => {
+    e.stopPropagation();
+    if (!canManage || isUpdatingVisibility || !onVisibilityChange) return;
+
+    const nextVisibility = e.target.value as 'private' | 'group' | 'public';
+    if (nextVisibility === normalizeServerVisibility(server.visibility ?? server.config?.visibility)) {
+      return;
+    }
+
+    setIsUpdatingVisibility(true);
+    try {
+      await onVisibilityChange(server, nextVisibility);
+    } finally {
+      setIsUpdatingVisibility(false);
     }
   };
 
@@ -296,6 +328,8 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }:
   const enabled = server.enabled !== false;
   const canManage = canManageServer(server, auth.user);
   const serverEndpoint = `${baseUrl}/mcp/${server.name}`;
+  const visibility = getServerVisibilityDisplay(t, server.visibility ?? server.config?.visibility);
+  const visibilityOptions = getServerVisibilityOptions(t, visibility.value);
 
   return (
     <>
@@ -308,7 +342,7 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }:
           className="grid items-center gap-3 px-4 py-3 cursor-pointer hover:bg-[var(--hub-surface-hover)] transition-colors"
           style={{
             gridTemplateColumns:
-              'minmax(220px,1.9fr) minmax(110px,0.9fr) minmax(120px,0.95fr) minmax(180px,1.1fr) 72px 36px',
+              'minmax(220px,1.9fr) minmax(110px,0.9fr) minmax(120px,0.95fr) minmax(110px,0.9fr) minmax(180px,1.1fr) 72px 36px',
           }}
           onClick={() => setExpanded(!expanded)}
         >
@@ -428,6 +462,33 @@ const ServerCard = ({ server, onRemove, onEdit, onToggle, onRefresh, onReload }:
               </span>
             ) : (
               <span style={{ color: 'var(--hub-ink-3)', fontSize: 12 }}>—</span>
+            )}
+          </div>
+
+          <div className="min-w-0" onClick={(e) => e.stopPropagation()}>
+            {canManage && onVisibilityChange ? (
+              <select
+                value={visibility.value}
+                onChange={handleVisibilityChange}
+                disabled={isUpdatingVisibility}
+                className="w-full rounded-md border px-2 py-1 text-[11.5px] bg-[var(--hub-surface)] text-[var(--hub-ink)]"
+                style={{ borderColor: 'var(--hub-line-2)' }}
+                aria-label={t('server.visibility', 'Visibility')}
+                title={visibility.longLabel}
+              >
+                {visibilityOptions.map((option) => (
+                  <option key={option.value} value={option.value} disabled={option.disabled}>
+                    {option.label}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <span
+                className={`inline-flex items-center rounded-md border px-2 py-0.5 text-[11.5px] ${visibility.className}`}
+                title={visibility.longLabel}
+              >
+                {visibility.shortLabel}
+              </span>
             )}
           </div>
 
