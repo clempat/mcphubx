@@ -21,6 +21,7 @@ import type {
 } from '@modelcontextprotocol/sdk/shared/auth.js';
 import { ServerConfig } from '../types/index.js';
 import { getSystemConfigDao } from '../dao/index.js';
+import { replaceEnvVars } from '../config/index.js';
 import {
   buildRedirectUriFromBase,
   DEFAULT_OAUTH_REDIRECT_URI,
@@ -62,8 +63,12 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
 
   constructor(serverName: string, serverConfig: ServerConfig, systemInstallBaseUrl?: string) {
     this.serverName = serverName;
-    this.serverConfig = serverConfig;
+    this.serverConfig = this.expandServerConfig(serverConfig);
     this._systemInstallBaseUrl = systemInstallBaseUrl;
+  }
+
+  private expandServerConfig(serverConfig: ServerConfig): ServerConfig {
+    return replaceEnvVars(serverConfig as Record<string, any>) as ServerConfig;
   }
 
   /**
@@ -144,7 +149,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
           oauth.scopes = scopes;
         });
         if (updatedConfig) {
-          this.serverConfig = updatedConfig;
+          this.serverConfig = this.expandServerConfig(updatedConfig);
         }
         console.log('Stored auto-detected OAuth scopes', {
           serverName: this.serverName,
@@ -226,7 +231,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
       });
 
       if (updatedConfig) {
-        this.serverConfig = updatedConfig;
+        this.serverConfig = this.expandServerConfig(updatedConfig);
       }
 
       if (!scopes || scopes.length === 0) {
@@ -290,7 +295,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
     });
 
     if (updatedConfig) {
-      this.serverConfig = updatedConfig;
+      this.serverConfig = this.expandServerConfig(updatedConfig);
     }
 
     this._codeVerifier = undefined;
@@ -337,7 +342,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
 
       const updatedConfig = await updatePendingAuthorization(this.serverName, pendingUpdate);
       if (updatedConfig) {
-        this.serverConfig = updatedConfig;
+        this.serverConfig = this.expandServerConfig(updatedConfig);
       }
     } catch (error) {
       console.error('Failed to persist pending OAuth authorization state', {
@@ -381,7 +386,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
         codeVerifier: verifier,
       });
       if (updatedConfig) {
-        this.serverConfig = updatedConfig;
+        this.serverConfig = this.expandServerConfig(updatedConfig);
       }
     } catch (error) {
       console.error('Failed to persist OAuth code verifier', {
@@ -404,7 +409,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
     const storedVerifier = storedConfig?.oauth?.pendingAuthorization?.codeVerifier;
 
     if (storedVerifier) {
-      this.serverConfig = storedConfig || this.serverConfig;
+      this.serverConfig = storedConfig ? this.expandServerConfig(storedConfig) : this.serverConfig;
       this._codeVerifier = storedVerifier;
       return storedVerifier;
     }
@@ -430,9 +435,9 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
     const assignUpdatedConfig = (updated?: ServerConfigWithOAuth) => {
       if (updated) {
         currentConfig = updated;
-        this.serverConfig = updated;
+        this.serverConfig = this.expandServerConfig(updated);
       } else {
-        this.serverConfig = currentConfig;
+        this.serverConfig = this.expandServerConfig(currentConfig);
       }
     };
 

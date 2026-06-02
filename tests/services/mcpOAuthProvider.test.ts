@@ -23,11 +23,19 @@ jest.mock('../../src/services/mcpService.js', () => ({
 }));
 
 import { getSystemConfigDao } from '../../src/dao/index.js';
+import { updatePendingAuthorization } from '../../src/services/oauthSettingsStore.js';
 import { MCPHubOAuthProvider } from '../../src/services/mcpOAuthProvider.js';
 
 describe('MCPHubOAuthProvider redirect URI resolution', () => {
+  const originalEnv = process.env;
+
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env = { ...originalEnv };
+  });
+
+  afterEach(() => {
+    process.env = originalEnv;
   });
 
   it('prefers oauth.redirectUri over installation Base URL for the callback URL', async () => {
@@ -75,5 +83,40 @@ describe('MCPHubOAuthProvider redirect URI resolution', () => {
       'https://backup.example.com/oauth/callback',
       'https://base.example.com/oauth/callback',
     ]);
+  });
+
+  it('keeps environment-expanded OAuth credentials after persisting pending authorization', async () => {
+    process.env.GOOGLE_MCP_OAUTH_CLIENT_ID = 'expanded-google-client-id';
+    process.env.GOOGLE_MCP_OAUTH_CLIENT_SECRET = 'expanded-google-client-secret';
+
+    (getSystemConfigDao as jest.Mock).mockReturnValue({
+      get: jest.fn().mockResolvedValue({}),
+    });
+
+    (updatePendingAuthorization as jest.Mock).mockResolvedValue({
+      url: 'https://people.googleapis.com/mcp',
+      oauth: {
+        clientId: '${GOOGLE_MCP_OAUTH_CLIENT_ID}',
+        clientSecret: '${GOOGLE_MCP_OAUTH_CLIENT_SECRET}',
+        pendingAuthorization: {
+          codeVerifier: 'saved-verifier',
+        },
+      },
+    });
+
+    const provider = await MCPHubOAuthProvider.create('thermondo-people', {
+      url: 'https://people.googleapis.com/mcp',
+      oauth: {
+        clientId: 'expanded-google-client-id',
+        clientSecret: 'expanded-google-client-secret',
+      },
+    } as any);
+
+    await provider.saveCodeVerifier('saved-verifier');
+
+    expect(provider.clientInformation()).toEqual({
+      client_id: 'expanded-google-client-id',
+      client_secret: 'expanded-google-client-secret',
+    });
   });
 });
