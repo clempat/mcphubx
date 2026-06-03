@@ -16,6 +16,7 @@
  */
 
 import { Request, Response } from 'express';
+import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import {
   getServerByName,
   getServerByOAuthState,
@@ -282,7 +283,20 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
           };
         }
 
-        // Replace the existing transport instance to avoid reusing a closed/aborted transport
+        // Tear down the existing client + transport. The previous Client still holds
+        // capabilities cached from the initial connect, so any "isConnected" check
+        // would be misleading: the underlying transport is about to be replaced and
+        // the SDK Client cannot be safely rewired to a new transport instance.
+        try {
+          if (serverInfo.client) {
+            await serverInfo.client.close();
+          }
+        } catch (closeError) {
+          console.warn('Failed to close existing client during OAuth reconnect', {
+            serverName: serverInfo.name,
+            error: closeError,
+          });
+        }
         try {
           if (serverInfo.transport && 'close' in serverInfo.transport) {
             await (serverInfo.transport as any).close();
@@ -303,81 +317,79 @@ export const handleOAuthCallback = async (req: Request, res: Response) => {
         );
         serverInfo.transport = refreshedTransport;
 
-        // Update server status to indicate OAuth is complete
-        serverInfo.status = 'connected';
-        if (serverInfo.oauth) {
-          serverInfo.oauth.authorizationUrl = undefined;
-          serverInfo.oauth.state = undefined;
-          serverInfo.oauth.codeVerifier = undefined;
-        }
+        // Build a fresh Client and connect it to the new transport. Mirrors the
+        // reconnect path in callToolWithReconnect (mcpService.ts) so there is a
+        // single, trusted pattern for "transport changed -> rebuild client".
+        const refreshedClient = new Client(
+          {
+            name: `mcp-client-${serverInfo.name}`,
+            version: '1.0.0',
+          },
+          {
+            capabilities: {},
+          },
+        );
 
-        // Check if client needs to be connected
-        const isClientConnected = serverInfo.client && serverInfo.client.getServerCapabilities();
-
-        if (!isClientConnected) {
-          // Client is not connected yet, connect it
-          if (serverInfo.client && serverInfo.transport) {
-            console.log('Connecting client with refreshed transport', {
-              serverName: serverInfo.name,
-            });
-            try {
-              await serverInfo.client.connect(serverInfo.transport, serverInfo.options);
-              console.log('Client connected successfully after OAuth callback', {
-                serverName: serverInfo.name,
-              });
-
-              // List tools after successful connection
-              const capabilities = serverInfo.client.getServerCapabilities();
-              console.log('Server capabilities after OAuth callback', {
-                serverName: serverInfo.name,
-                capabilities,
-              });
-
-              if (capabilities?.tools) {
-                console.log('Listing tools after OAuth callback', {
-                  serverName: serverInfo.name,
-                });
-                const toolsResult = await serverInfo.client.listTools({}, serverInfo.options);
-                const separator = getNameSeparator();
-                serverInfo.tools = toolsResult.tools.map((tool) => ({
-                  name: `${serverInfo.name}${separator}${tool.name}`,
-                  description: tool.description || '',
-                  inputSchema: tool.inputSchema || {},
-                }));
-                console.log('Listed tools after OAuth callback', {
-                  serverName: serverInfo.name,
-                  toolCount: serverInfo.tools.length,
-                });
-              } else {
-                console.log('Server does not support tools capability after OAuth callback', {
-                  serverName: serverInfo.name,
-                });
-              }
-            } catch (connectError) {
-              console.error('Error connecting client after OAuth callback', {
-                serverName: serverInfo.name,
-                error: connectError,
-              });
-              if (connectError instanceof Error) {
-                console.error('Connect error details after OAuth callback', {
-                  serverName: serverInfo.name,
-                  message: connectError.message,
-                  stack: connectError.stack,
-                });
-              }
-              // Even if connection fails, mark OAuth as complete
-              // The user can try reconnecting from the dashboard
-            }
-          } else {
-            console.log(
-              'Cannot connect client after OAuth callback because client or transport is missing',
-              { serverName: serverInfo.name },
-            );
-          }
-        } else {
-          console.log('Client already connected after OAuth callback', {
+        try {
+          console.log('Connecting fresh client with refreshed transport', {
             serverName: serverInfo.name,
           });
+          await refreshedClient.connect(refreshedTransport, serverInfo.options);
+          serverInfo.client = refreshedClient;
+          serverInfo.status = 'connected';
+          if (serverInfo.oauth) {
+            serverInfo.oauth.authorizationUrl = undefined;
+            serverInfo.oauth.state = undefined;
+            serverInfo.oauth.codeVerifier = undefined;
+          }
+          console.log('Client connected successfully after OAuth callback', {
+            serverName: serverInfo.name,
+          });
+
+          const capabilities = refreshedClient.getServerCapabilities();
+          console.log('Server capabilities after OAuth callback', {
+            serverName: serverInfo.name,
+            capabilities,
+          });
+
+          if (capabilities?.tools) {
+            console.log('Listing tools after OAuth callback', {
+              serverName: serverInfo.name,
+            });
+            const toolsResult = await refreshedClient.listTools({}, serverInfo.options);
+            const separator = getNameSeparator();
+            serverInfo.tools = toolsResult.tools.map((tool) => ({
+              name: `${serverInfo.name}${separator}${tool.name}`,
+              description: tool.description || '',
+              inputSchema: tool.inputSchema || {},
+            }));
+            console.log('Listed tools after OAuth callback', {
+              serverName: serverInfo.name,
+              toolCount: serverInfo.tools.length,
+            });
+          } else {
+            console.log('Server does not support tools capability after OAuth callback', {
+              serverName: serverInfo.name,
+            });
+          }
+        } catch (connectError) {
+          console.error('Error connecting client after OAuth callback', {
+            serverName: serverInfo.name,
+            error: connectError,
+          });
+          if (connectError instanceof Error) {
+            console.error('Connect error details after OAuth callback', {
+              serverName: serverInfo.name,
+              message: connectError.message,
+              stack: connectError.stack,
+            });
+          }
+          serverInfo.client = refreshedClient;
+          serverInfo.status = 'disconnected';
+          serverInfo.error =
+            connectError instanceof Error ? connectError.message : String(connectError);
+          // Even if connection fails, OAuth itself succeeded; surface the error to the user
+          // so they can retry from the dashboard.
         }
 
         console.log('Successfully completed OAuth flow for server', {
