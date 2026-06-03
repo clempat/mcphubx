@@ -317,7 +317,7 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
   async redirectToAuthorization(url: URL): Promise<void> {
     console.log('='.repeat(80));
     console.log(`OAuth Authorization Required for server: ${this.serverName}`);
-    console.log(`Authorization URL: ${url.toString()}`);
+    console.log(`Authorization URL (from SDK): ${url.toString()}`);
     console.log('='.repeat(80));
     let state = url.searchParams.get('state') || undefined;
 
@@ -326,6 +326,35 @@ export class MCPHubOAuthProvider implements OAuthClientProvider {
       url.searchParams.set('state', state);
     } else {
       this._currentState = state;
+    }
+
+    // The SDK prefers the `WWW-Authenticate` scope hint from the upstream server
+    // (see @modelcontextprotocol/sdk client/auth.js startAuthorization). When the
+    // user has explicitly configured oauth.scopes for this server, that intent
+    // should win over the server's default hint -- otherwise the configured
+    // scopes are silently ignored.
+    const configuredScopes = this.serverConfig.oauth?.scopes;
+    if (configuredScopes && configuredScopes.length > 0) {
+      const desiredScope = configuredScopes.join(' ');
+      if (url.searchParams.get('scope') !== desiredScope) {
+        console.log('Overriding authorization scope with configured scopes', {
+          serverName: this.serverName,
+          configuredScopes,
+        });
+        url.searchParams.set('scope', desiredScope);
+      }
+    }
+
+    // Google requires `access_type=offline` and (on first consent) `prompt=consent`
+    // to issue a refresh token. Without this the access token expires after ~1h
+    // and the user has to re-authorize manually.
+    if (url.hostname.endsWith('accounts.google.com')) {
+      if (!url.searchParams.has('access_type')) {
+        url.searchParams.set('access_type', 'offline');
+      }
+      if (!url.searchParams.has('prompt')) {
+        url.searchParams.set('prompt', 'consent');
+      }
     }
 
     const authorizationUrl = url.toString();
